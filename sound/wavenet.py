@@ -8,48 +8,15 @@ import tensorflow.summary
 
 import numpy as np
 
-class CausalConv1D(tf.layers.Conv1D):
+class CausalConv1D(tf.keras.layers.Conv1D):
 	def __init__(
 		self,
-		filters,
-		kernel_size,
-		data_format='channels_last',
-		dilation_rate=1,
-		activation=None,
-		use_bias=True,
-		kernel_initializer=None,
-		bias_initializer=tf.zeros_initializer(),
-		kernel_regularizer=None,
-		bias_regularizer=None,
-		activity_regularizer=None,
-		kernel_constraint=None,
-		bias_constraint=None,
-		trainable=True,
-		name=None,
-		reuse=None,
 		**kwargs
 	):
 		super().__init__(
-			filters=filters,
-			kernel_size=kernel_size,
-			
-			strides=1,
 			padding='valid',
-			
-			data_format=data_format,
-			dilation_rate=dilation_rate,
-			activation=activation,
-			use_bias=use_bias,
-			kernel_initializer=kernel_initializer,
-			bias_initializer=bias_initializer,
-			kernel_regularizer=kernel_regularizer,
-			bias_regularizer=bias_regularizer,
-			activity_regularizer=activity_regularizer,
-			kernel_constraint=kernel_constraint,
-			bias_constraint=bias_constraint,
-			trainable=trainable,
-			name=name,
-			**kwargs
+			strides=1,
+			**{k, v for k in kwargs.items() if k not in ['padding', 'strides']}
 		);
 		
 	def call(self, input):
@@ -57,7 +24,7 @@ class CausalConv1D(tf.layers.Conv1D):
 		padded_input = tf.pad(input, tf.constant([[0, 0], [padding, 0], [0, 0]]));
 		return super().call(padded_input);
 
-class CausalConv1DCell(tf.contrib.rnn.RNNCell):
+class CausalConv1DRNNCell(tf.contrib.rnn.RNNCell):
 	def __init__(
 		self,
 		units,
@@ -160,7 +127,43 @@ class CausalConv1DCell(tf.contrib.rnn.RNNCell):
 		output = state[0];
 		
 		return (output, new_state);
+	
+class WaveNetBlock(tf.keras.layers.Layer):
+	def __init__(self, output_units, skip_units, kernel_size, **kvargs):
+		super().init(__kwargs__);
+		
+	def build(self, input_shapes):
+		self.conv_blocks = (
+			CausalConv1D(output_units, kernel_size, activation = 'sigmoid', name='conv_sigmoid'),
+			CausalConv1D(output_units, kernel_size, activation = 'tanh', name = 'conv_tanh')
+		;
+		
+		if(input_shape[1] != output_units)
+			self.residual_projector = tf.keras.layers.Conv1D(output_units, 1, name = 'project_residual');
+		else
+			self.residual_projector = None;
+		
+		if(skip_units != output_units)
+			self.skip_projector = tf.keras.layers.Conv1D(skip_units, 1, name = 'project_skip');
+		else
+			self.skip_projector = None;
+			
+	def call(self, input):
+		conv_out = conv_blocks[0](input) * conv_blocks[1](input);
+		
+		if(self.residual_projector)
+			residual = self.residual_projector(input);
+		else
+			residual = input;
+		
+		if(self.skip_projector)
+			skip = self.skip_projector(conv_out);
+		else
+			skip = conv_out;
+		
+		return (conv_out + residual, skip);
 
+class WaveNet(tf.keras.layers.Layer):
 # Returns a base-mu logarithm encoder
 def mu_enconde(num_channels):
 	mu = tf.to_float(num_channels) - 1;
@@ -180,6 +183,5 @@ def mu_decode(num_channels):
 			(1+mu)**tf.abs(input) - 1
 		) / mu
 	);
-
-#class WaveNetBlock(tf.keras.layers.Layer):
+		
 #	def __init__(self, )
