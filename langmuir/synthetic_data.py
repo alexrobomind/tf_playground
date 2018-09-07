@@ -59,11 +59,14 @@ def langmuir_u_i(bias, t_e, i_sat, v_plasma, m_i_over_m_e):
 		) * i_sat;
 	
 	with tf.name_scope('softmin'):
-		electron_contribution = -tf.log(
-			tf.exp(-electron_contribution) +
-			tf.exp(-electron_limit)
+		electron_contribution = tf.stack(
+			[electron_contribution, electron_limit],
+			axis = 2
 		);
+		electron_contribution = -tf.reduce_logsumexp(-electron_contribution, axis = 2);
 		electron_contribution = tf.maximum(electron_contribution, 0);
+		
+		#electron_contribution = tf.check_numerics(electron_contribution, 'Electron current invalid');
 	
 	result = electron_contribution - i_sat;
 	
@@ -101,6 +104,7 @@ def synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, n, dt):
 			);
 			
 		bias = tf.sin(frequency * t) * amplitude + offset;
+		#bias = tf.check_numerics(bias, 'Invalid bias');
 		
 	with tf.name_scope('u_i_curve'):
 		current = langmuir_u_i(bias, t_e, i_sat, v_plasma, mass_ratio);
@@ -136,7 +140,7 @@ def langmuir_data(batch_size):
 	v_plasma = random_range('v_p', -50, 150);
 	mass_ratio = 1.0;
 
-	(t, bias, current) = synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, 20000, 1e-5);
+	(t, bias, current) = synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, 500, 1e-5);
 	
 	return {
 		't' : t,
