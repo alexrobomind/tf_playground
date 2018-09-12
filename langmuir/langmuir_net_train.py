@@ -19,12 +19,12 @@ class Model(tf.keras.layers.Layer):
 		self.units = units;
 
 	def build(self, input_shape):
-		dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+		dilations = [1, 2, 4, 8, 16, 32, 64];
 		templates = [{
-			'units' : 32,
+			'units' : 16,
 			'kernel_size' : 3
 			}, {
-			'units' : 64,
+			'units' : 32,
 			'kernel_size' : 3
 			#}, {
 			#'units' : 125,

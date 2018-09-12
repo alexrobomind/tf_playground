@@ -84,8 +84,8 @@ def synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, n, dt):
 	with tf.name_scope('random_frequency'):
 		frequency = tf.random_uniform(
 			shape = (t_e.shape[0].value, 1),
-			minval = 300,
-			maxval = 5000
+			minval = 1.0,
+			maxval = 1.0
 		);
 	
 	with tf.name_scope('bias'):
@@ -103,7 +103,7 @@ def synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, n, dt):
 				maxval = 50
 			);
 			
-		bias = tf.sin(frequency * t) * amplitude + offset;
+		bias = tf.sin(tf.constant(2 * math.pi, name = "two_pi") * frequency * t) * amplitude + offset;
 		#bias = tf.check_numerics(bias, 'Invalid bias');
 		
 	with tf.name_scope('u_i_curve'):
@@ -140,7 +140,7 @@ def langmuir_data(batch_size):
 	v_plasma = random_range('v_p', -50, 150);
 	mass_ratio = 1.0;
 
-	(t, bias, current) = synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, 500, 1e-5);
+	(t, bias, current) = synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, 256, 1.0 / 64.0);
 	
 	return {
 		't' : t,
