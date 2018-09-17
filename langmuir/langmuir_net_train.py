@@ -12,6 +12,8 @@ import datetime
 import convnet_1 as ns_net
 import synthetic_data
 
+import matplotlib.pyplot as plt
+
 class Model(tf.keras.layers.Layer):
 	def __init__(self, units, **kwargs):
 		super().__init__(kwargs);
@@ -19,13 +21,13 @@ class Model(tf.keras.layers.Layer):
 		self.units = units;
 
 	def build(self, input_shape):
-		dilations = [1, 2, 4, 8, 16, 32, 64];
+		dilations = [1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 32, 32];
 		templates = [{
-			'units' : 16,
-			'kernel_size' : 3
+			'units' : 32,
+			'kernel_size' : 5
 			}, {
 			'units' : 32,
-			'kernel_size' : 3
+			'kernel_size' : 5
 			#}, {
 			#'units' : 125,
 			#'kernel_size' : 3
@@ -41,7 +43,7 @@ class Model(tf.keras.layers.Layer):
 
 		self.net = ns_net.Net(32, configs);
 		
-		dense_units = [32, 32];
+		dense_units = [32];
 		self.post = [tf.keras.layers.Conv1D(n, kernel_size = 1, name = 'post_1x1', activation='relu') for n in dense_units];
 		self.final = tf.keras.layers.Conv1D(self.units, kernel_size = 1, name = 'final_1x1');
 	
@@ -60,7 +62,8 @@ input_ids = ['bias', 'current'];
 model_input = tf.stack([src[i] for i in input_ids], axis = 2);
 #model_input = tf.check_numerics(model_input, message = 'Numerical error in model input');
 
-references = [src[i] for i in src if i is not 't'];
+keys = [k for k in src if k is not 't'];
+references = [src[i] for i in keys];
 references = [tf.broadcast_to(v, shape = src['bias'].shape) for v in references];
 reference = tf.stack(references, axis = 2);
 
@@ -71,13 +74,12 @@ loss = tf.losses.mean_squared_error(
 	output, reference
 );
 
-optimizer = tf.train.AdamOptimizer(0.01);
+optimizer = tf.train.AdamOptimizer(1e-3);
 train = optimizer.minimize(loss);
 
 # Summaries
 tf.summary.scalar('loss', loss);
 
-keys = [k for k in src if k is not 't'];
 for i in range(0, len(keys)):
 	tf.summary.scalar(
 		'loss_{}'.format(keys[i]),
@@ -89,6 +91,8 @@ for i in range(0, len(keys)):
 init = tf.global_variables_initializer();
 summarize = tf.summary.merge_all();
 
+saver = tf.train.Saver();
+
 with tf.Session() as session:
 	session.run([init]);
 	
@@ -98,10 +102,28 @@ with tf.Session() as session:
 		session.graph
 	);
 	
-	for i in range(0, 10000):
-		loss_val, _, summary, output_val = session.run([loss, train, summarize, output]);
-		#print('Out: {}'.format(output_val));
+	chkp_format = 'checkpoints/{}.chkp';
+	#saver.restore(session, chkp_format.format(0));
+	
+	for i in range(0, 100001):
+		loss_val, _, summary = session.run([loss, train, summarize]);
 		print('Loss: {}'.format(loss_val));
 		writer.add_summary(summary, i);
 		
+		if i % 1000 == 0:
+			saver.save(session, chkp_format.format(i));
+		
 	writer.close();
+	
+	for i in range(0, 100):
+		[output_val, reference_val, t_val] = session.run([output, reference, src['t']]);
+		
+		i = 0;
+		for key in keys:
+			plt.figure();
+			plt.plot(output_val[0, :, i]);
+			plt.plot(reference_val[0, :, i]);
+			plt.title(key);
+			i = i + 1;
+
+		plt.show();

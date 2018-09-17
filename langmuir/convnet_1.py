@@ -29,10 +29,10 @@ class NetBlock(tf.keras.layers.Layer):
 		else:
 			self.residual_projector = None;
 		
-		if self.skip_units != self.units:
-			self.skip_projector = tf.keras.layers.Conv1D(self.skip_units, 1, name = 'project_skip');
-		else:
-			self.skip_projector = None;
+		#if self.skip_units != self.units:
+		self.skip_projector = tf.keras.layers.Conv1D(self.skip_units, 1, name = 'project_skip');
+		#else:
+		#	self.skip_projector = None;
 			
 	def call(self, input):
 		conv_out = self.conv_blocks[0](input) * self.conv_blocks[1](input);
