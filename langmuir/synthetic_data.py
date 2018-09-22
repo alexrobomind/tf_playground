@@ -109,7 +109,7 @@ def synthetic_probe(t_e, i_sat, v_plasma, mass_ratio, n, dt):
 	with tf.name_scope('u_i_curve'):
 		current = langmuir_u_i(bias, t_e, i_sat, v_plasma, mass_ratio);
 		
-	noise_level = tf.constant(2.0, name = 'noise_level');
+	noise_level = tf.constant(0.0, name = 'noise_level');
 	
 	with tf.name_scope('noise'):
 		noise = tf.random_uniform(
