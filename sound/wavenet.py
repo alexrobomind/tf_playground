@@ -74,7 +74,8 @@ class ConvResnetBlock(tf.keras.layers.Layer):
 			next = act(intermediate) * gate(intermediate);
 			
 			if self.causal:
-				next = tf.pad(next, [[0, 0], [intermediate.shape[1].value - next.shape[1].value, 0], [0, 0]]);
+				causal_padding = (act.kernel_size[0] - 1) * act.dilation_rate[0];
+				next = tf.pad(next, [[0, 0], [causal_padding, 0], [0, 0]]);
 			
 			intermediate = next;
 		
@@ -82,7 +83,7 @@ class ConvResnetBlock(tf.keras.layers.Layer):
 		out = self.conv_1x1_out(intermediate);
 		
 		# If possible, wire up a residual connection
-		if(out.shape == input.shape):
+		if(out.shape[2] == input.shape[2]):
 			out = out + input;
 		
 		return (skip, out);
@@ -98,9 +99,10 @@ class ConvResnet(tf.keras.layers.Layer):
 	
 	def call(self, input, constants = None):
 		input_shape = tf.shape(input);
-		constant_shape = tf.shape(constants);
 		
-		if constants is not None:
+		if(constants is not None):
+			constant_shape = tf.shape(constants);
+			
 			constants = tf.broadcast_to(
 				constants,
 				shape = [input_shape[0], input_shape[1], constant_shape[-1]],
