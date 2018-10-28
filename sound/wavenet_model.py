@@ -28,8 +28,12 @@ def model(input, condition = None):
 		'hidden': [{'filters': 256, 'kernel_size': 2, 'dilation_rate': 2**i}]
 	} for i in range(0, 10)];
 	
-	for i in range(0, 1):
-		input = wavenet.Wavenet(blocks, 256)(input, condition);
+	nets = [wavenet.Wavenet(blocks, 256) for i in range(0, 1)];
+	
+	for net in nets:
+		input = net(input, condition);
+	
+	padding = sum([net.padding() for net in nets]);
 	
 	for i in range(0, 2):
 		input = tf.keras.layers.Conv1D(
@@ -43,7 +47,7 @@ def model(input, condition = None):
 	return tf.keras.layers.Conv1D(
 		filters = 3 * n_distributions,
 		kernel_size = 1
-	)(input);
+	)(input), padding;
 
 if __name__ == "__main__":
 	constant_size = int(input("Specify a number of constant slots for the model: "));

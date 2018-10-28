@@ -14,7 +14,7 @@ import glob
 
 import numpy as np
 
-class ConvResnetBlock(tf.keras.layers.Layer):
+class ConvResnetBlock(tf.keras.models.Model):
 	def __init__(
 		self,
 		name = 'wavenet_block',
@@ -34,8 +34,6 @@ class ConvResnetBlock(tf.keras.layers.Layer):
 		self.hidden = hidden;
 		self.causal = causal;
 		
-	
-	def build(self, input_shape):
 		self.conv_1x1_skip = tf.keras.layers.Conv1D(
 			filters = self.skip,
 			kernel_size = 1,
@@ -65,49 +63,64 @@ class ConvResnetBlock(tf.keras.layers.Layer):
 		];
 	
 	def call(self, input, constants = None):
-		intermediate = input;
-		
-		if(constants is not None):
-			intermediate = tf.concat([intermediate, constants], axis = 2);
-		
-		for act, gate in self.cconv_hidden:
-			next = act(intermediate) * gate(intermediate);
+		#@tf.contrib.layers.recompute_grad
+		def inner(input, constants):
+			intermediate = input;
 			
-			if self.causal:
-				causal_padding = (act.kernel_size[0] - 1) * act.dilation_rate[0];
-				next = tf.pad(next, [[0, 0], [causal_padding, 0], [0, 0]]);
+			if(constants is not None):
+				intermediate = tf.concat([intermediate, constants], axis = 2);
 			
-			intermediate = next;
+			for act, gate in self.cconv_hidden:
+				next = act(intermediate) * gate(intermediate);
+				
+				if self.causal:
+					causal_padding = (act.kernel_size[0] - 1) * act.dilation_rate[0];
+					next = tf.pad(next, [[0, 0], [causal_padding, 0], [0, 0]]);
+				
+				intermediate = next;
+			
+			skip = self.conv_1x1_skip(intermediate);
+			out = self.conv_1x1_out(intermediate);
+			
+			# If possible, wire up a residual connection
+			if(out.shape[2] == input.shape[2]):
+				out = out + input;
+			
+			return (skip, out);
 		
-		skip = self.conv_1x1_skip(intermediate);
-		out = self.conv_1x1_out(intermediate);
+		return inner(input, constants);
+	
+	def padding(self):
+		if not self.causal:
+			return 0;
+				
+		paddings = [
+			(act.kernel_size[0] - 1) * act.dilation_rate[0]
+			for act, _ in self.cconv_hidden
+		];
 		
-		# If possible, wire up a residual connection
-		if(out.shape[2] == input.shape[2]):
-			out = out + input;
-		
-		return (skip, out);
+		return sum(paddings);
 
-class ConvResnet(tf.keras.layers.Layer):
+class ConvResnet(tf.keras.models.Model):
 	def __init__(self, blocks, outputs, **kwargs):
 		super().__init__(**kwargs);
 		self.outputs = outputs;
 		self.block_configs = [{**block, 'skip': outputs} for block in blocks];
-	
-	def build(self, input_shape):
 		self.blocks = [ConvResnetBlock(**config) for config in self.block_configs];
-	
+		
 	def call(self, input, constants = None):
 		input_shape = tf.shape(input);
 		
 		if(constants is not None):
 			constant_shape = tf.shape(constants);
 			
-			constants = tf.broadcast_to(
+			"""constants = tf.broadcast_to(
 				constants,
 				shape = [input_shape[0], input_shape[1], constant_shape[-1]],
 				name = 'conditioning'
-			);
+			);"""
+			with tf.name_scope("conditioning"):
+				constants = constants + tf.zeros(dtype=constants.dtype, shape = [input_shape[0], input_shape[1], constant_shape[-1]]);
 		
 		output = tf.zeros(shape = [input_shape[0], input_shape[1], self.outputs]);
 		
@@ -116,6 +129,10 @@ class ConvResnet(tf.keras.layers.Layer):
 			output = output + skip;
 		
 		return output;
+	
+	def padding(self):
+		paddings = [block.padding() for block in self.blocks];
+		return sum(paddings);
 
 class Wavenet(ConvResnet):
 	def __init__(self, blocks, outputs, **kwargs):

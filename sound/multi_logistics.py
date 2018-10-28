@@ -28,8 +28,8 @@ def distribution(coeffs, name = "MixedLogistic"):
 		_validate_shape(coeffs);
 		
 		distribution = tfp.distributions.MixtureSameFamily(
-			mixture_distribution = tfp.distributions.Categorical(logits = coeffs[..., :, 0]),
-			components_distribution = tfp.distributions.Logistic(loc = coeffs[..., :, 1], scale = coeffs[..., :, 2])			
+			mixture_distribution = tfp.distributions.Categorical(logits = coeffs[..., :, 0], validate_args=True),
+			components_distribution = tfp.distributions.Logistic(loc = coeffs[..., :, 1], scale = tf.exp(coeffs[..., :, 2]), validate_args=True)			
 		);
 		
 		return distribution;
