@@ -33,3 +33,6 @@ class TimeCache:
 		
 		cache_offset      = t_start_min - self._cache_start;
 		cache_extract_len = t_start - t_start_min;
+		
+		@autograph.convert
+		def inner():
