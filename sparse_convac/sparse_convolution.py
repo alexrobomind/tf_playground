@@ -10,6 +10,7 @@ def swap_axes(data, ax1, ax2):
 class BlockConv2D(tf.keras.Model):
 	def __init__(self, channels, blocks_in, blocks_out, transpose = False, use_bias = False, activation = None, **kwargs):
 		super().__init__();
+				
 		self.blocks_in = blocks_in;
 		self.blocks_out = blocks_out;
 		self.channels = channels;
@@ -23,6 +24,7 @@ class BlockConv2D(tf.keras.Model):
 		self.bias = None;
 		self.act_layer = None;
 	
+	@tf.function
 	def call(self, input):
 		n_blocks = self.blocks_in.shape[0];
 		
@@ -55,19 +57,21 @@ class BlockConv2D(tf.keras.Model):
 		
 		blocks_out = self.blocks_out;
 		blocks_out = tf.reshape(blocks_out, [tf.shape(blocks_out)[0], tf.shape(blocks_out)[1], 1]);
-		print('Blocks: ');
-		print(blocks_out);
-		print('Non-Scattered outputs:');
-		print(outputs);
+		#print('Blocks: ');
+		#print(blocks_out);
+		#print('Non-Scattered outputs:');
+		#print(outputs);
 		
 		outputs = tf.scatter_nd(blocks_out, outputs, post_shape);
 		outputs = tf.transpose(outputs, [1, 2, 3, 0]);
-		print('Scattered outputs:');
-		print(outputs);
+		#print('Scattered outputs:');
+		#print(outputs);
 		
 		if self.use_bias:
 			if self.bias is None:
-				self.bias = tf.Variable(tf.zeros(dtype = tf.float32, shape = tf.shape(outputs)));
+				with tf.init_scope():
+					bias_init = tf.zeros(dtype = tf.float32, shape = (self.channels,));
+					self.bias = tf.Variable(bias_init);
 			
 			outputs = outputs + self.bias;
 		
@@ -109,20 +113,30 @@ class RandomSparseConv2D(tf.keras.Model):
 		self.decoder = None;
 		
 		self.kwargs = kwargs;
+		
+		self.n_channels_in = None;
 	
+	def build(self, input_shape):
+		self.n_channels_in = input_shape[-1];
+	
+	@tf.function
 	def call(self, input):
 		if self._encoder is None:
-			n_channels_in = tf.shape(input)[3];
+			with tf.init_scope():
+				n_channels_in = self.n_channels_in;
+				
+				def make_perm(n_blocks, block_size, n_channels):
+					perm = tf.range(0, n_blocks * block_size) % n_channels;
+					perm = tf.random.shuffle(perm);
+					perm = tf.reshape(perm, [n_blocks, block_size], name = "block_permutation");
+					return perm;
+				
+				# Initialize index permutations
+				self.blocks_in =  make_perm(self.n_blocks, self.bs_in, n_channels_in);
+				self.blocks_out = make_perm(self.n_blocks, self.bs_out, self.channels);
 			
-			def make_perm(n_blocks, block_size, n_channels):
-				perm = tf.range(0, n_blocks * block_size) % n_channels;
-				perm = tf.random.shuffle(perm);
-				perm = tf.reshape(perm, [n_blocks, block_size]);
-				return perm;
-			
-			# Initialize index permutations
-			self.blocks_in =  make_perm(self.n_blocks, self.bs_in, n_channels_in);
-			self.blocks_out = make_perm(self.n_blocks, self.bs_out, self.channels);
+				#self.blocks_in  = tf.Variable(blocks_in , trainable = False);
+				#self.blocks_out = tf.Variable(blocks_out, trainable = False);
 			
 			self._encoder = BlockConv2D(self.channels, self.blocks_in, self.blocks_out, transpose = False, **self.kwargs);
 			self.decoder  = BlockConv2D(n_channels_in, self.blocks_out, self.blocks_in, transpose = True , **self.kwargs);
@@ -138,12 +152,14 @@ class EncoderDecoderStack(tf.keras.Model):
 		
 		self.l = layers;
 	
+	#@tf.function
 	def encoder(self, input):
 		for l in self.l:
 			input = l.encoder(input);
 		
 		return input;
 	
+	#@tf.function
 	def decoder(self, input):
 		for l in reversed(self.l):
 			input = l.decoder(input);
