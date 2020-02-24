@@ -135,8 +135,8 @@ class RandomSparseConv2D(tf.keras.Model):
 				self.blocks_in =  make_perm(self.n_blocks, self.bs_in, n_channels_in);
 				self.blocks_out = make_perm(self.n_blocks, self.bs_out, self.channels);
 			
-				#self.blocks_in  = tf.Variable(blocks_in , trainable = False);
-				#self.blocks_out = tf.Variable(blocks_out, trainable = False);
+				self.blocks_in  = tf.Variable(self.blocks_in , trainable = False);
+				self.blocks_out = tf.Variable(self.blocks_out, trainable = False);
 			
 			self._encoder = BlockConv2D(self.channels, self.blocks_in, self.blocks_out, transpose = False, **self.kwargs);
 			self.decoder  = BlockConv2D(n_channels_in, self.blocks_out, self.blocks_in, transpose = True , **self.kwargs);
