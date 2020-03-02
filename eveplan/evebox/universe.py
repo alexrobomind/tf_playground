@@ -6,37 +6,54 @@ import functools
 
 import evebox.esi as esi
 
-def esi_data_by_ids(name, ids, tqdm = None):
-    if tqdm is None:
-        def tqdm(x, desc = None, total = None):
-            return x
+from evebox.util import notqdm
 
-    kwargs = {
-        name + '_id' : id
-    }
-    
+def handle_request(op):
+    return json.dumps(esi.request(op).data)
+
+def esi_data_by_ids(name, ids, tqdm = notqdm):
     def get_op(id):
-        return esi.op['get_universe_{n}s_{n}_id'.format(n = name)](**kwargs)
+        kwargs = {
+            name + '_id' : id
+        }
         
-    def handle_request(id):
-        x = esi.request(get_op(id)).data
-        return json.dumps(x)
+        return esi.op['get_universe_{n}s_{n}_id'.format(n = name)](**kwargs)
+            
+    ops = [get_op(id) for id in ids]
     
     pool = multiprocessing.pool.ThreadPool(5)
             
     d = {
         id : json.loads(data)
-         for id, data in zip(
+        for id, data in zip(
             ids,
-            list(tqdm(pool.imap(handle_request, ids, chunksize = 1), desc = 'Loading {}s'.format(name), total = len(ids)))
+            list(tqdm(pool.imap(handle_request, ops, chunksize = 1), desc = 'Loading {}s'.format(name), total = len(ops)))
         )
     }
     
     return d
 
-def esi_data(name, tqdm = None):
+def esi_data(name, tqdm = notqdm):
     ids = esi.request(esi.op['get_universe_{}s'.format(name)]()).data
-    return universe_data_by_ids(name, ids, tqdm)
+    ids = sorted(set(ids))
+    return esi_data_by_ids(name, ids, tqdm)
+
+def type_ids(tqdm = notqdm):
+    pages = esi.request(
+        esi.op['get_universe_types']()
+    ).header['X-pages'][0]
+
+    type_ids = [
+        i
+        for page in tqdm(range(1, pages + 1))
+        for i in esi.request(
+            esi.op['get_universe_types'](page = page)
+        ).data
+    ]
+    
+    type_ids = sorted(set(type_ids))
+    
+    return type_ids
 
 class Universe:
     def __init__(self):
@@ -65,12 +82,15 @@ class Universe:
         if root in self.systems_by_name:
             root = self.systems_by_name[root]
             
-        ids = [k for k in systems if systems[k]["security_status"] >= min_sec]
-        subgraph = systems_graph.subgraph(ids)
+        assert self.systems[root]["security_status"] >= min_sec, 'The chosen root does not fullfill the security status requirement'
+            
+        ids = [k for k in self.systems if self.systems[k]["security_status"] >= min_sec]
+        
+        subgraph = self.graph.subgraph(ids)
 
         # Limit to components connected to root
         ids = nx.node_connected_component(subgraph, root)
-        subgraph = systems_graph.subgraph(ids)
+        subgraph = subgraph.subgraph(ids)
         
         u = Universe()
         u.systems = {
@@ -85,7 +105,7 @@ class Universe:
             if v["system_id"] in ids
         }
         
-        cids = set([v["constellation_id"] for v in self.system.values()])
+        cids = set([v["constellation_id"] for v in self.systems.values()])
         u.constellations = {
             k : v
             for k, v in self.constellations.items()
@@ -102,10 +122,17 @@ class Universe:
     
     @property
     @functools.lru_cache()
+    def regions(self):
+        regions = [self.get_region(s) for s in self.systems]
+        regions = sorted(set(regions))
+        return regions
+    
+    @property
+    @functools.lru_cache()
     def systems_by_name(self):
         return {
             v["name"] : k
-            for k, v in self.systems.values()
+            for k, v in self.systems.items()
         }
             
     @property
@@ -144,8 +171,8 @@ class Universe:
         else:
             do_dump(f)
 
-    @classmethod
-    def from_json(self, f, *args, **kwargs):
+    @staticmethod
+    def from_json(f, *args, **kwargs):
         def do_load(f):
             return json.load(f, *args, **kwargs)
         
@@ -164,10 +191,10 @@ class Universe:
         u.constellations = intd(data['constellations'])
         u.market_types  = intd(data['market_types'])
         
-        return self
+        return u
     
-    @classmethod
-    def from_esi(self, cache = None, tqdm = None):
+    @staticmethod
+    def from_esi(cache = None, tqdm = notqdm):
         try:
             return Universe.from_json(cache)
         except Exception as e:
@@ -178,15 +205,16 @@ class Universe:
         u.systems =        esi_data('system', tqdm)
         u.constellations = esi_data('constellation', tqdm)
         
-        market_types     = esi_data('type', tqdm)
+        tids             = type_ids(tqdm)
+        market_types     = esi_data_by_ids('type', tids, tqdm)
         u.market_types   = {
             k : v
-            for k, v in market_types
+            for k, v in market_types.items()
             if 'market_group_id' in v
         }
         del market_types
         
-        stargate_ids = list(set(
+        stargate_ids = sorted(set(
             gate
             for s in u.systems.values()
             for gate in s.get("stargates", [])
