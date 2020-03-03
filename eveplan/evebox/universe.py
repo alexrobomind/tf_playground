@@ -45,7 +45,7 @@ def type_ids(tqdm = notqdm):
 
     type_ids = [
         i
-        for page in tqdm(range(1, pages + 1))
+        for page in tqdm(range(1, pages + 1), desc = 'Loading type IDs')
         for i in esi.request(
             esi.op['get_universe_types'](page = page)
         ).data
@@ -72,6 +72,24 @@ class Universe:
         self._distance_cache[a] = nx.shortest_path_length(self.graph, a)
         
         return self._distance_cache[a][b]
+    
+    def sub_market(self, typeids):
+        typeids = set(typeids)
+        
+        u = Universe()
+        
+        u.systems = self.systems
+        u.stargates = self.stargates
+        u.constellations = self.constellations
+        u.regions = self.regions
+        
+        u.market_types = {
+            k : v
+            for k, v in self.market_types.items()
+            if k in typeids
+        }
+        
+        return u
     
     def range(self, root, min_sec = -10.0):
         """
@@ -105,12 +123,21 @@ class Universe:
             if v["system_id"] in ids
         }
         
-        cids = set([v["constellation_id"] for v in self.systems.values()])
+        cids = sorted(set([v["constellation_id"] for v in self.systems.values()]))
         u.constellations = {
             k : v
             for k, v in self.constellations.items()
             if k in cids
         }
+        del cids
+        
+        rids = sorted(set([self.get_region(v) for v in self.systems]))
+        u.regions = {
+            k : v
+            for k, v in self.regions.items()
+            if k in rids
+        }
+        del rids
         
         u.market_types = self.market_types
         
@@ -119,13 +146,6 @@ class Universe:
     def get_region(self, system):
         cid = self.systems[system]["constellation_id"]
         return self.constellations[cid]["region_id"]
-    
-    @property
-    @functools.lru_cache()
-    def regions(self):
-        regions = [self.get_region(s) for s in self.systems]
-        regions = sorted(set(regions))
-        return regions
     
     @property
     @functools.lru_cache()
@@ -161,6 +181,7 @@ class Universe:
                     'systems' : self.systems,
                     'stargates' : self.stargates,
                     'constellations' : self.constellations,
+                    'regions' : self.regions,
                     'market_types' : self.market_types
                 }, f, *args, **kwargs
             )
@@ -189,6 +210,7 @@ class Universe:
         u.systems = intd(data['systems'])
         u.stargates = intd(data['stargates'])
         u.constellations = intd(data['constellations'])
+        u.regions = intd(data['regions'])
         u.market_types  = intd(data['market_types'])
         
         return u
@@ -204,6 +226,7 @@ class Universe:
         u = Universe()        
         u.systems =        esi_data('system', tqdm)
         u.constellations = esi_data('constellation', tqdm)
+        u.regions        = esi_data('region', tqdm)
         
         tids             = type_ids(tqdm)
         market_types     = esi_data_by_ids('type', tids, tqdm)
