@@ -45,10 +45,71 @@ def mask_for_gather(params, indices, idx_mask = None, params_mask = None, batch_
             return tf.broadcast_to(param_mask, total_shape)
         else:
             return None
+        
 
-class Embedding:
-    def __init__(self, universe):
-        self.universe = universe
+    
+def encode_orders(universe, orders, updates = None, with_mask = False, pad_to = None):
+    orders = orders.copy()
+    
+    # Perform updates
+    if updates:
+        orders.reset_index(inplace=True)
+        orders.set_index('order_id')
+        orders.sort_index()
+        orders.loc[list(updates)] = updates.values()
+        
+    tidx = {
+        t : idx
+        for i, t in enumerate(universe.types)
+    }
+    sidx = {
+        s : idx
+        for i, s in enumerate(universe.systems)
+    }
+        
+    orders_types = tf.constant(
+        orders['type_id'].apply(lambda x : tidx(s)).as_numpy(np.int32)
+    )
+    orders_systems = tf.constant(
+        orders['system_id'].apply(lambda x : sidx(s)).as_numpy(np.int32)
+    )
+        
+    orders['is_sell_order'] = ~orders['is_buy_order']
+        
+    orders_data = tf.constant(
+        orders[['volume_remaining', 'is_buy_order', 'is_sell_order']].as_numpy(np.float32)
+    )
+        
+    if pad_to is not None:
+        assert pad_to >= len(orders)
+            
+        padding = [[0, pad_to - len(orders)], [0, 0]]
+            
+        def pad(x):
+            return tf.pad(x, padding)
+            
+        orders_types = pad(orders_types)
+        orders_systems = pad(orders_system)
+        orders_data = pad(orders_data)
+            
+        def make_mask(x):
+            tmp = tf.ones(tf.shape(x), dtype = tf.bool)
+            return tf.pad(tmp, padding)
+            
+        types_mask = make_mask(orders_types)
+        systems_mask = make_mask(orders_systems)
+        data_mask = make_mask(orders_systems)
+            
+        mask = (types_mask, systems_mask, data_mask)
+    else:
+        mask = None
+            
+    data = (orders_types, orders_systems, orders_data)
+        
+    if with_mask:
+        return data, mask
+    else:
+        return data
     
 
 class Embedding(tf.keras.layers.Layer):
@@ -97,33 +158,6 @@ class Embedding(tf.keras.layers.Layer):
             for k, t in tqdm(self.universe.market_types.items(), desc = 'Encoding types')
         )
     
-    def encode_orders(self, orders):
-        tidx = {
-            t : idx
-            for i, t in enumerate(self.types)
-        }
-        sidx = {
-            s : idx
-            for i, s in enumerate(self.systems)
-        }
-        
-        orders_types = tf.constant(
-            self.orders['type_id'].apply(lambda x : tidx(s)).as_numpy(np.int32)
-        )
-        orders_systems = tf.constant(
-            self.orders['system_id'].apply(lambda x : sidx(s)).as_numpy(np.int32)
-        )
-        
-        data = self.orders.copy()
-        data['is_sell_order'] = ~data['is_buy_order']
-        
-        orders_data = tf.constant(
-            self.orders[['volume_remaining', 'is_buy_order', 'is_sell_order']].as_numpy(np.float32)
-        )
-        
-        return (orders_types, orders_systems, orders_data)
-
-        
     def call(self, input, mask = None):
         all_system_data = tf.concat([self.systems, self.system_notes], axis = -1)
         all_type_data   = tf.concat([self.types,   self.type_notes  ], axis = -1)
