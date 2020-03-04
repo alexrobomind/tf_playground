@@ -46,17 +46,10 @@ def mask_for_gather(params, indices, idx_mask = None, params_mask = None, batch_
         else:
             return None
         
-
+def encode_orders(universe, orders, with_mask = False, pad_to = None):
+    assert pad_to is None, 'Padding support temporarily disabled'
     
-def encode_orders(universe, orders, updates = None, with_mask = False, pad_to = None):
     orders = orders.copy()
-    
-    # Perform updates
-    if updates:
-        orders.reset_index(inplace=True)
-        orders.set_index('order_id')
-        orders.sort_index()
-        orders.loc[list(updates)] = updates.values()
         
     tidx = {
         t : idx
@@ -110,7 +103,26 @@ def encode_orders(universe, orders, updates = None, with_mask = False, pad_to = 
         return data, mask
     else:
         return data
+
+def update_encoded_orders(universe, orders, updates):
+    # Note: The index does not have to be sorted
+    assert list(orders.index) == ['order_id']
     
+    indices = orders.index.loc[updates['order_id']]
+    
+    newdata = encode_orders(universe, updates)
+    
+    def apply(x):
+        def update_tensor(val, update):
+            return tf.tensor_scatter_nd_update(
+                val, indices, update
+            )
+        
+        return tf.next.map_structure(
+            update_tensor, encoded, newdata
+        )
+    
+    return apply
 
 class Embedding(tf.keras.layers.Layer):
     def __init__(self, universe, landmarks = [], tqdm = notqdm):
