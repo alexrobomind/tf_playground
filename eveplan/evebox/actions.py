@@ -1,20 +1,33 @@
+import functools
+
 # --- Action calculus ---
 
 # Wrapper that allows an action to just modify a mutable state representation
 # and performs validity checking of resulting state
 class ActionImpl:
-    def __init__(self, f, desc = None, repr = None):
+    def __init__(self, f, t_min, desc = None, repr = None):
         self.wrapped = f
         self.desc = desc
         self.repr = desc if repr is None else repr
+        self.t_min = t_min
     
     def __call__(self, state):
         s = MutableState(state)
-        s.last_modified_item = None
-        self.wrapped(s)
-        s = State(s)
-        
-        s.validate()
+        try:
+            s.last_modified_item = None
+            self.wrapped(s)
+            
+            s.time_left = min(s.time_left, state.time_left - self.t_min)
+            
+            s = State(s)
+            s.validate()
+        except:
+            s = MutableState(state)
+            
+            s.time_left -= self.t_min
+            s.time_left = max(s.time_left, 0)
+            
+            s = State(s)
         
         return s
     
@@ -24,9 +37,14 @@ class ActionImpl:
     def __str__(self):
         return self.desc
         
-def action(**kwargs):
+def action(t_min = 1, **kwargs):
+    """
+    Constructs from a function acting on a mutable state an action making a new
+    immutable states from a passed one. If the transition function fails or produces
+    an invalid state, a fallback is executed instead that just subtracts fail_time.
+    """
     def impl(f):
-        return ActionImpl(f, **kwargs)
+        return functools.wraps(f)(ActionImpl(f, t_min, **kwargs))
     return impl
 
 # --- Marker broker implementation and market actions ---
@@ -116,14 +134,14 @@ def market_transaction(state, type_id, amount, order_type):
         del state.cargo[type_id]
     
 def buy(type_id, amount):
-    @action(desc = 'Buy {} of {}'.format(amount, types[type_id]["name"]))
+    @action(desc = 'Buy {} of {}'.format(amount, types[type_id]["name"]), t_min = 0.1)
     def do_buy(s):
         market_transaction(s, type_id, amount, 'buy')
         
     return do_buy
 
 def sell(type_id, amount):
-    @action(desc = 'Sell {} of {}'.format(amount, types[type_id]["name"]))
+    @action(desc = 'Sell {} of {}'.format(amount, types[type_id]["name"]), t_min = 0.1)
     def do_sell(s):
         market_transaction(s, type_id, amount, 'sell')
     
@@ -138,7 +156,7 @@ def warp_to_station(station_id):
     
     distances = nx.shortest_path_length(subgraph, station.system_id)
     
-    @action(desc = 'Move to {} in {}'.format(station.name, systems[station.system_id]["name"]))
+    @action(t_min = 0.1, desc = 'Move to {} in {}'.format(station.name, systems[station.system_id]["name"]))
     def do_warp_to_station(s):
         assert s.station != station_id, 'Cannot warp from to same station'
         
@@ -153,14 +171,14 @@ def warp_to_station(station_id):
         
         s.time_left -= t
     
-    return do_warp_to
+    return do_warp_to_station
 
 @functools.lru_cache(maxsize=None)
 def warp_to_system(system_id):
     distances = nx.shortest_path_length(subgraph, system_id)
     
-    @action(desc = 'Move to system {}'.format(systems[system_id]["name"]))
-    def do_warp_to_system(s):
+    @action(t_min = 0.1, desc = 'Move to system {}'.format(systems[system_id]["name"]))
+    def do_warp_to_system(s):        
         t = warp_cost * system_distance(system_id, s.system)
         
         s.system = system_id

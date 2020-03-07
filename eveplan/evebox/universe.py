@@ -73,7 +73,7 @@ class Universe:
         
         return self._distance_cache[a][b]
     
-    def sub_market(self, typeids):
+    def with_types(self, typeids):
         typeids = set(typeids)
         
         u = Universe()
@@ -83,13 +83,22 @@ class Universe:
         u.constellations = self.constellations
         u.regions = self.regions
         
-        u.market_types = {
+        u.types = {
             k : v
-            for k, v in self.market_types.items()
+            for k, v in self.types.items()
             if k in typeids
         }
         
         return u
+    
+    def with_market_types(self):
+        return self.with_types(
+            (
+                t
+                for t in self.types
+                if 'market_group_id' in self.types[t]
+            )
+        )
     
     def range(self, root, min_sec = -10.0):
         """
@@ -123,7 +132,7 @@ class Universe:
             if v["system_id"] in ids
         }
         
-        cids = sorted(set([v["constellation_id"] for v in self.systems.values()]))
+        cids = sorted(set([v["constellation_id"] for v in u.systems.values()]))
         u.constellations = {
             k : v
             for k, v in self.constellations.items()
@@ -131,7 +140,7 @@ class Universe:
         }
         del cids
         
-        rids = sorted(set([self.get_region(v) for v in self.systems]))
+        rids = sorted(set([self.get_region(v) for v in u.systems]))
         u.regions = {
             k : v
             for k, v in self.regions.items()
@@ -139,13 +148,23 @@ class Universe:
         }
         del rids
         
-        u.market_types = self.market_types
+        u.types = self.types
         
         return u
     
     def get_region(self, system):
         cid = self.systems[system]["constellation_id"]
         return self.constellations[cid]["region_id"]
+    
+    @property
+    @functools.lru_cache()
+    def type_list(self):
+        return list(self.types)
+    
+    @property
+    @functools.lru_cache()
+    def system_list(self):
+        return list(self.systems)
     
     @property
     @functools.lru_cache()
@@ -182,7 +201,7 @@ class Universe:
                     'stargates' : self.stargates,
                     'constellations' : self.constellations,
                     'regions' : self.regions,
-                    'market_types' : self.market_types
+                    'types' : self.types
                 }, f, *args, **kwargs
             )
             
@@ -211,7 +230,7 @@ class Universe:
         u.stargates = intd(data['stargates'])
         u.constellations = intd(data['constellations'])
         u.regions = intd(data['regions'])
-        u.market_types  = intd(data['market_types'])
+        u.types  = intd(data['types'])
         
         return u
     
@@ -229,13 +248,7 @@ class Universe:
         u.regions        = esi_data('region', tqdm)
         
         tids             = type_ids(tqdm)
-        market_types     = esi_data_by_ids('type', tids, tqdm)
-        u.market_types   = {
-            k : v
-            for k, v in market_types.items()
-            if 'market_group_id' in v
-        }
-        del market_types
+        u.types          = esi_data_by_ids('type', tids, tqdm)
         
         stargate_ids = sorted(set(
             gate

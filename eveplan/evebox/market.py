@@ -8,7 +8,7 @@ from evebox.universe import Universe
 from evebox.util     import notqdm
 
 def load_orders(universe, tqdm = notqdm):
-    typeids = set(universe.market_types)
+    typeids = set(universe.types)
         
     def in_region(region):
         n_pages = esi.request(
@@ -22,7 +22,7 @@ def load_orders(universe, tqdm = notqdm):
             
         all_orders = (
             order
-            for i in tqdm(range(1, n_pages + 1), desc = 'Loading orders in ' + universe.regions[region]["name"])
+            for i in tqdm(range(1, n_pages + 1), desc = 'Loading orders in ' + universe.regions[region]["name"], leave = False)
             for order in get_page(i)
         )
             
