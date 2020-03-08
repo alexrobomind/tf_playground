@@ -1,3 +1,6 @@
+import copy
+import pandas as pd
+
 ## Structure of the state space
 class StateProp:
     def __init__(self, default, convert = (lambda x: x, lambda x: x)):
@@ -83,8 +86,9 @@ class State:
         v = vmax - vleft
         c = cmax - cleft
         
-        orders_by_id = orders.loc[[k for k,v in self.updated_orders]]
-        orders_by_id['vol_mod'] = [v for k,v in self.updated_orders]
+        #orders_by_id = orders.loc[[k for k,v in self.updated_orders]]
+        #orders_by_id['vol_mod'] = [v for k,v in self.updated_orders]
+        orders = pd.DataFrame.from_dict(self.updated_orders, orient = 'index', columns = ['ID', 'Remaining'])
         
         cargo_df = pd.DataFrame.from_dict(dict(self.cargo), orient = 'index', columns = ['Amount', 'Value'])
         cargo_df.index.name = 'Item ID'
@@ -129,7 +133,7 @@ State:
         {orders}
         """.format(
             valid = validated,
-            system = systems[self.system]["name"] if self.system is not None and self.system in systems else "Unknown",
+            system = self.system, #systems[self.system]["name"] if self.system is not None and self.system in systems else "Unknown",
             sysid = self.system,
             station = self.station,
             
@@ -140,7 +144,8 @@ State:
             
             cargo = indent(cargo_string, 8),
             #cargo  = indent(cargo_df.to_string(), 8),
-            orders = indent(orders_by_id.to_string(), 8)
+            #orders = indent(orders_by_id.to_string(), 8)
+            orders = orders
         )
     
     def limits_left(self):
@@ -155,7 +160,7 @@ State:
     
     def validate(self):
         assert self.system is not None, 'No system specified'
-        assert self.system in system_ids, 'Not in a known system'
+        #assert self.system in system_ids, 'Not in a known system'
         
         (v, c) = self.limits_left()
         assert v >= 0, 'Volume exceeded'

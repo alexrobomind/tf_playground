@@ -1,5 +1,7 @@
 import functools
 
+from evebox.state import State, MutableState
+
 # --- Action calculus ---
 
 # Wrapper that allows an action to just modify a mutable state representation
@@ -49,7 +51,7 @@ def action(t_min = 1, **kwargs):
 
 # --- Marker broker implementation and market actions ---
 
-def market_transaction(state, type_id, amount, order_type):
+def market_transaction(state, type_id, amount, order_type, orders):
     assert order_type in ['buy', 'sell']
     
     amount = int(amount)
@@ -133,17 +135,17 @@ def market_transaction(state, type_id, amount, order_type):
     if state.cargo[type_id][0] == 0:
         del state.cargo[type_id]
     
-def buy(type_id, amount):
-    @action(desc = 'Buy {} of {}'.format(amount, types[type_id]["name"]), t_min = 0.1)
+def buy(type_id, amount, orders):
+    @action(desc = 'Buy {} of {}'.format(amount, type_id), t_min = 0.1)
     def do_buy(s):
-        market_transaction(s, type_id, amount, 'buy')
+        market_transaction(s, type_id, amount, 'buy', orders)
         
     return do_buy
 
-def sell(type_id, amount):
-    @action(desc = 'Sell {} of {}'.format(amount, types[type_id]["name"]), t_min = 0.1)
+def sell(type_id, amount, orders):
+    @action(desc = 'Sell {} of {}'.format(amount, type_id), t_min = 0.1)
     def do_sell(s):
-        market_transaction(s, type_id, amount, 'sell')
+        market_transaction(s, type_id, amount, 'sell', orders)
     
     return do_sell
 # --- Movement actions ---
@@ -151,10 +153,8 @@ def sell(type_id, amount):
 warp_cost = 1.0
 
 @functools.lru_cache(maxsize=None)
-def warp_to_station(station_id):
+def warp_to_station(universe, station_id):
     station = get_station(station_id)
-    
-    distances = nx.shortest_path_length(subgraph, station.system_id)
     
     @action(t_min = 0.1, desc = 'Move to {} in {}'.format(station.name, systems[station.system_id]["name"]))
     def do_warp_to_station(s):
@@ -164,7 +164,7 @@ def warp_to_station(station_id):
             t = warp_cost
         else:
             #t = warp_time * nx.shortest_path_length(subgraph, s.system, station.system_id)
-            t = warp_cost * distances[s.system]
+            t = warp_cost * universe.distance(s.system, station.system_id)
         
         s.station = station_id
         s.system = station.system_id
@@ -174,12 +174,11 @@ def warp_to_station(station_id):
     return do_warp_to_station
 
 @functools.lru_cache(maxsize=None)
-def warp_to_system(system_id):
-    distances = nx.shortest_path_length(subgraph, system_id)
-    
-    @action(t_min = 0.1, desc = 'Move to system {}'.format(systems[system_id]["name"]))
+def warp_to_system(universe, system_id):    
+    #@action(t_min = 0.1, desc = 'Move to system {}'.format(systems[system_id]["name"]))
+    @action(t_min = 0.1, desc = 'Move to system {}'.format(system_id))
     def do_warp_to_system(s):        
-        t = warp_cost * system_distance(system_id, s.system)
+        t = warp_cost * universe.distance(system_id, s.system)
         
         s.system = system_id
         s.station = None

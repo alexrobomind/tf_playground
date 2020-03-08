@@ -25,35 +25,61 @@ def load_orders(universe, tqdm = notqdm):
             for i in tqdm(range(1, n_pages + 1), desc = 'Loading orders in ' + universe.regions[region]["name"], leave = False)
             for order in get_page(i)
         )
+        
+        return all_orders
             
         # Sort
-        all_orders = sorted(all_orders, key = lambda x: x.type_id)
-        all_orders = itertools.groupby(all_orders, key = lambda x: x.type_id)
-            
-        return {
-            k : v
-            for k, v in all_orders
-            if k in typeids
-        }
+        #all_orders = sorted(all_orders, key = lambda x: x.type_id)
+        #print('Found {} orders in {}'.format(len(all_orders), universe.regions[region]['name']))
+        #all_orders = itertools.groupby(all_orders, key = lambda x: x.type_id)
+        #    
+        #orders_dict = {
+        #    k : v
+        #    for k, v in all_orders
+        #    if k in typeids
+        #}
         
-    orders = {
-        k : in_region(k)
-        for k in tqdm(universe.regions)
-    }
+        #print('Reduced to {} type ids'.format(len(orders_dict)))
+        #print('Total no of orders: {}'.format(
+        #    sum([len(v) for v in orders_dict.values()])
+        #))
+        #
+        #return orders_dict
+        
+    #orders = {
+    #    k : in_region(k)
+    #    for k in tqdm(universe.regions, desc = 'Loading market orders')
+    #}
+    #
+    #flat_orders = [
+    #    # Encode each order as a dict of columns
+    #    {
+    #        k : v
+    #        for k,v in order.items()
+    #    }
+    #    for by_region in tqdm(orders.values())
+    #    for by_type in by_region.values()
+    #    for order in by_type
+    #]
     
-    flat_orders = [
-        # Encode each order as a dict of columns
+    orders = [
         {
             k : v
-            for k,v in order.items()
+            for k, v in order.items()
         }
-        for by_region in tqdm(orders.values())
-        for by_type in by_region.values()
-        for order in by_type
+        for region in tqdm(universe.regions, desc = 'Loading market orders')
+        for order in in_region(region)
     ]
     
-    df = pd.DataFrame(flat_orders)
+    print('Loaded a total of {} orders'.format(len(orders)))
+    
+    df = pd.DataFrame(orders)
     df.set_index('order_id', inplace = True)
     df.sort_index(inplace = True)
+    
+    df = df[
+        df['type_id'].isin(universe.types) &
+        df['system_id'].isin(universe.systems)
+    ]
     
     return df

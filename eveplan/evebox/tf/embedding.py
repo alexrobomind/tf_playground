@@ -1,4 +1,6 @@
 import tensorflow as tf
+import numpy as np
+import pandas as pd
 
 from evebox.util import notqdm
     
@@ -13,7 +15,7 @@ def mask_for_gather(params, indices, idx_mask = None, params_mask = None, batch_
     with tf.name_scope('mask_for_gather'):
         total_shape = tf.concat([
             tf.shape(params)[:axis],
-            tf.shape(indices)[n_batch_dims:]
+            tf.shape(indices)[n_batch_dims:],
             tf.shape(params)
         ])
         
@@ -52,25 +54,25 @@ def encode_orders(universe, orders, with_mask = False, pad_to = None):
     orders = orders.copy()
         
     tidx = {
-        t : idx
+        t : i
         for i, t in enumerate(universe.types)
     }
     sidx = {
-        s : idx
+        s : i
         for i, s in enumerate(universe.systems)
     }
         
     orders_types = tf.constant(
-        orders['type_id'].apply(lambda x : tidx(s)).as_numpy(np.int32)
+        orders['type_id'].apply(lambda x : tidx[x]).to_numpy(np.int32)
     )
     orders_systems = tf.constant(
-        orders['system_id'].apply(lambda x : sidx(s)).as_numpy(np.int32)
+        orders['system_id'].apply(lambda x : sidx[x]).to_numpy(np.int32)
     )
         
     orders['is_sell_order'] = ~orders['is_buy_order']
         
     orders_data = tf.constant(
-        orders[['volume_remaining', 'is_buy_order', 'is_sell_order']].as_numpy(np.float32)
+        orders[['volume_remain', 'is_buy_order', 'is_sell_order']].to_numpy(np.float32)
     )
         
     if pad_to is not None:
@@ -106,9 +108,17 @@ def encode_orders(universe, orders, with_mask = False, pad_to = None):
 
 def update_encoded_orders(universe, orders, updates):
     # Note: The index does not have to be sorted
-    assert list(orders.index) == ['order_id']
+    assert orders.index.name == 'order_id', 'Index should be \'order_id\', but was {}'.format(orders.index.name)
     
-    indices = orders.index.loc[updates['order_id']]
+    indices = tf.constant(
+        [orders.index.get_loc(i) for i in updates.reset_index()['order_id']],
+        dtype = tf.int32
+    )
+    
+    indices = tf.expand_dims(
+        indices,
+        axis = -1
+    )
     
     newdata = encode_orders(universe, updates)
     
@@ -118,8 +128,8 @@ def update_encoded_orders(universe, orders, updates):
                 val, indices, update
             )
         
-        return tf.next.map_structure(
-            update_tensor, encoded, newdata
+        return tf.nest.map_structure(
+            update_tensor, x, newdata
         )
     
     return apply
