@@ -1,5 +1,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
+import numpy as np
+
 import functools
 
 from evebox.actions import buy, sell, warp_to_system
@@ -73,6 +75,9 @@ class TradingGym:
         
         self.orders = orders.copy().reset_index().set_index('order_id')
         self.encoded_orders = encode_orders(universe, orders)
+        
+        self.type_indices = {t: idx for idx, t in enumerate(universe.types)}
+        self.system_indices = {s: idx for idx, s in enumerate(universe.systems)}
     
     def sample_and_logp(self, params):
         def move_logits(action):
@@ -144,22 +149,26 @@ class TradingGym:
         )
         
         # Encode types
-        indices = []
         cargo_dict = dict(state.cargo)
-        input['cargo'] = tf.constant(
-            [
-                [
-                    cargo_dict.get(type, (0, 0))[0],
-                    cargo_dict.get(type, (0, 0))[1]
-                ]
-                for type in self.universe.types
-            ],
-            dtype = tf.float32
+        #input['cargo'] = tf.constant(
+        #    [
+        #        [
+        #            cargo_dict.get(type, (0, 0))[0],
+        #            cargo_dict.get(type, (0, 0))[1]
+        #        ]
+        #        for type in self.universe.types
+        #    ],
+        #    dtype = tf.float32
+        #)
+        input['cargo'] = tf.scatter_nd(
+            indices = tf.constant([[self.type_indices[t]] for t in cargo_dict], shape = [len(cargo_dict), 1], dtype = tf.int32),
+            updates = tf.constant([val for val in cargo_dict.values()], shape = [len(cargo_dict), 2], dtype = tf.float32),
+            shape   = tf.constant([len(self.universe.types), 2], dtype = tf.int32)
         )
         del cargo_dict
         
-        updated_ids = [k for k,v in state.updated_orders]
-        updated_orders = self.orders.loc[updated_ids].copy()
+        updated_ids = np.asarray([k for k,v in state.updated_orders])
+        updated_orders = self.orders.loc[updated_ids].copy().sort_index()
         
         for id, vol in state.updated_orders:
             updated_orders.loc[id]['volume_remain'] = vol
