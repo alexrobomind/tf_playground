@@ -75,8 +75,8 @@ def reduced_attention(keys, values, queries, mask_kv = None, mask_q = None):
             queries = tf.where(mask_q, queries, 0)
         
         # Compute the [..., dim_k, dim_v] matrix of weights
-        #weights = tf.linalg.matmul(keys, values, transpose_a = True)
-        weights = tf.eye(tf.shape(keys)[-1], tf.shape(values)[-1])
+        weights = tf.linalg.matmul(keys, values, transpose_a = True)
+        #weights = tf.eye(tf.shape(keys)[-1], tf.shape(values)[-1])
         
         # Normalize against the key dimension
         if mask_kv is not None:
