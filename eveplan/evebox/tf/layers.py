@@ -230,10 +230,10 @@ class StackedTogether(tf.keras.layers.Layer):
         stacked = tf.concat(inputs_flat, axis = self.axis)
         
         out_data = self.wrapped(stacked, *args, **kwargs)
-        out_mask = self.wrapped.compute_mask(stacked, *args, **kwargs)
+        out_mask = self.wrapped.compute_mask(stacked, mask = mask, *args, **kwargs)
         
         out_data = tf.nest.pack_sequence_as(inputs, tf.split(out_data, sizes, axis = axis))
-        out_mask = tf.nest.pack_sequence_as(inputs, tf.split(out_mask, sizes, axis = axis))
+        out_mask = tf.nest.pack_sequence_as(inputs, tf.split(out_mask, sizes, axis = axis)) if out_mask is not None else None
         
         return out_data, out_mask
     

@@ -136,14 +136,14 @@ def market_transaction(state, type_id, amount, order_type, orders):
         del state.cargo[type_id]
     
 def buy(type_id, amount, orders):
-    @action(desc = 'Buy {} of {}'.format(amount, type_id), t_min = 0.1)
+    @action(desc = 'Buy {} of {}'.format(amount, type_id), t_min = 0.5)
     def do_buy(s):
         market_transaction(s, type_id, amount, 'buy', orders)
         
     return do_buy
 
 def sell(type_id, amount, orders):
-    @action(desc = 'Sell {} of {}'.format(amount, type_id), t_min = 0.1)
+    @action(desc = 'Sell {} of {}'.format(amount, type_id), t_min = 0.5)
     def do_sell(s):
         market_transaction(s, type_id, amount, 'sell', orders)
     

@@ -135,7 +135,9 @@ def update_encoded_orders(universe, orders, updates):
     return apply
 
 class Embedding(tf.keras.layers.Layer):
-    def __init__(self, universe, landmarks = [], tqdm = notqdm):
+    def __init__(self, universe, d_notes, landmarks = [], tqdm = notqdm):
+        super().__init__()
+        
         self.universe = universe
         self.landmarks = []
         
@@ -143,10 +145,10 @@ class Embedding(tf.keras.layers.Layer):
         self._encode_types(tqdm)
         
         self.system_notes = tf.Variable(
-            tf.zeros(tf.shape(self.systems), dtype = tf.float32)
+            tf.zeros([len(universe.systems), d_notes], dtype = tf.float32)
         )
         self.type_notes = tf.Variable(
-            tf.zeros(tf.shape(self.types), dtype = tf.float32)
+            tf.zeros([len(universe.types), d_notes]  , dtype = tf.float32)
         )
     
     def _encode_systems(self, tqdm):
@@ -165,7 +167,7 @@ class Embedding(tf.keras.layers.Layer):
                 ]
                 for k, s in tqdm(self.universe.systems.items(), desc = 'Encoding systems')
             ],
-            dtype = tf.int32
+            dtype = tf.float32
         )
     
     def _encode_types(self, tqdm):
@@ -175,40 +177,45 @@ class Embedding(tf.keras.layers.Layer):
         #
         self.types = tf.constant(
             [
-                t['volume']
-            ]
-            for k, t in tqdm(self.universe.market_types.items(), desc = 'Encoding types')
+                [t['volume']]
+                for k, t in tqdm(self.universe.types.items(), desc = 'Encoding types')
+            ],
+            dtype = tf.float32
         )
     
     def call(self, input, mask = None):
-        all_system_data = tf.concat([self.systems, self.system_notes], axis = -1)
-        all_type_data   = tf.concat([self.types,   self.type_notes  ], axis = -1)
+        (orders_types, orders_systems, orders_data) = input['orders']
         
         output = {
-            'systems' : all_system_data,
-            'types' : all_type_data
+            'state' : input['state'],
+            
+            'systems' : tf.concat(
+                [
+                    self.systems,
+                    self.system_notes,
+                    input['systems']
+                ],
+                axis = -1
+            ),
+            
+            'cargo' : tf.concat(
+                [
+                    self.types,
+                    self.type_notes,
+                    input['cargo']
+                ],
+                axis = -1
+            )
         }
         
-        if 'orders' in input:
-            (orders_types, orders_systems, orders_data) = input['orders']
-        
-            all_orders_data = tf.concat([
-                tf.gather(all_type_data,   orders_types),
-                tf.gather(all_system_data, orders_systems),
+        output['orders'] = tf.concat(
+            [
+                tf.gather(output['cargo'], orders_types),
+                tf.gather(output['systems'], orders_systems),
                 orders_data
-            ], axis = -1)
-            
-            output['orders'] = all_orders_data
-        
-        if 'cargo' in input:
-            (cargo_types, cargo_data) = input['cargo']
-            
-            all_cargo_data = tf.concat([
-                tf.gather(all_type_data, cargo_types),
-                cargo_data
-            ], axis = -1)
-            
-            output['cargo'] = all_cargo_data
+            ]
+            , axis = -1
+        )
         
         return output
     

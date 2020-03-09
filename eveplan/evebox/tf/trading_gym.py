@@ -36,7 +36,7 @@ class StructuredGradWrapper():
                 result = self.f(*args, **kwargs)
 
                 # In tensorflow==2.1.0 (and maybe other versions) there is a weird bug where
-                # if *dy is present, the variables kwarg is not detected and the grad function
+                # if *dy is present, the 'variables' kwarg is not detected and the grad function
                 # therefore refused. However, having a kwargs dict is OK enough to get to
                 # variable-supporting mode
                 def grad(*dy, **grad_kwargs):
@@ -106,8 +106,8 @@ class TradingGym:
                 logits = bs_params(action)[..., 0]
             ),
             'bs_amount' : lambda action, bs_item: tfp.distributions.TruncatedNormal(
-                loc = bs_params(action)[..., bs_item, 1],
-                scale = bs_params(action)[...,bs_item, 2],
+                loc = tf.abs(bs_params(action)[..., bs_item, 1]),
+                scale = tf.abs(bs_params(action)[...,bs_item, 2]),
                 low =  0,
                 high = 1e8
             )
@@ -233,14 +233,14 @@ class TradingGym:
                     
                     # Record this sequence
                     result.append((state, action, logp, value))
-                    
-                    # Advance state and update progress bar info
-                    state = action(state)
-                    steps.set_postfix({'Time left' : state.time_left})
 
                     # Check for early termination (no point advancing if the time budget is out)
                     if state.time_left <= 0:
                         break
+                    
+                    # Advance state and update progress bar info
+                    state = action(state)
+                    steps.set_postfix({'Time left' : state.time_left})
                     
                     # Encode data for next iteration
                     model_input = self.encode_state(state)
@@ -249,13 +249,28 @@ class TradingGym:
         
         return run
     
-    def losses(inputs):
+    def losses(self, inputs):
         inputs = list(inputs)
         
-        entropy_loss = 0
-        value_loss = 0
-        policy_loss = 0
+        states, actions, logps, values = zip(*inputs)
         
-        for i, (state, logp, value) in enumerate(inputs):
-            entropy_loss -= logp
-            policy_loss 
+        logps = tf.stack(logps, axis = -1)
+        values = tf.stack(values, axis = -1)
+        state_values = tf.constant(
+            [state.value for state in states],
+            dtype = tf.float32
+        )
+        tl = tf.constant(
+            [state.time_left for state in states],
+            dtype = tf.float32
+        )
+        
+        rewards = state_values[...,1:] - state_values[...,:-1]
+        q_values = tf.math.cumsum(rewards, reverse = True)
+        advantages = q_values - values[:-1]
+        
+        policy_loss  = tf.math.reduce_mean(-logps[:-1] * advantages)
+        value_loss   = tf.math.reduce_mean(0.5 * advantages**2)
+        entropy_loss = tf.math.reduce_mean(logps)
+        
+        return policy_loss, value_loss, entropy_loss
