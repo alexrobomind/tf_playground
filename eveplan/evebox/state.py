@@ -22,6 +22,8 @@ def to_mutable(x):
 dict_prop = (lambda x: tuple((i for i in x.items())), lambda x: {k:v for (k,v) in x})
 
 state_props = {
+    'universe' : StateProp(None),
+    
     # Position of the ship
     'system' : StateProp(0),
     'station' : StateProp(None),
@@ -92,13 +94,13 @@ class State:
         
         cargo_df = pd.DataFrame.from_dict(dict(self.cargo), orient = 'index', columns = ['Amount', 'Value'])
         cargo_df.index.name = 'Item ID'
-        cargo_df['Item name'] = cargo_df.index.map(lambda x : types[x]["name"])
+        cargo_df['Item name'] = cargo_df.index.map(lambda x : self.universe.types[x]["name"])
         cargo_df = cargo_df[['Item name', 'Amount', 'Value']]
         
         def cargo_entry_info(entry):
             item_id, (amount, value) = entry
             
-            item_name = types[item_id]["name"]
+            item_name = self.universe.types[item_id]["name"]
             
             return "{:>10} x {:<20} ({:>10.2f} ISK)".format(amount, item_name, value)
         
@@ -133,7 +135,7 @@ State:
         {orders}
         """.format(
             valid = validated,
-            system = self.system, #systems[self.system]["name"] if self.system is not None and self.system in systems else "Unknown",
+            system = self.universe.systems[self.system]["name"] if self.system is not None and self.system in systems else "Unknown",
             sysid = self.system,
             station = self.station,
             
@@ -153,24 +155,25 @@ State:
         total_col = 0
         
         for item, (count, value) in self.cargo:
-            total_vol += types[item]["volume"] * count
+            total_vol += self.universe.types[item]["volume"] * count
             total_col += value
         
         return (self.volume_limit - total_vol, self.collateral_limit - total_col)
     
     def validate(self):
+        assert self.universe is not None, 'No universe associated'
         assert self.system is not None, 'No system specified'
         #assert self.system in system_ids, 'Not in a known system'
         
         (v, c) = self.limits_left()
-        assert v >= 0, 'Volume exceeded'
-        assert c >= 0, 'Collateral exceeded'
+        assert v >= 0, 'Volume exceeded by {}'.format(-v)
+        assert c >= 0, 'Collateral exceeded by {}'.format(-c)
         
-        assert self.time_left >= 0, 'Out of time'
+        assert self.time_left >= 0, 'Out of time ({})'.format(self.time_left)
     
     @property
     def value(self):
-        return self.wallet + sum([value for t, (count, value) in self.cargo])
+        return self.wallet + 1.001 * sum([value for t, (count, value) in self.cargo])
         
 
 # Helper class for incremental state modification

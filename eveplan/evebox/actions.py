@@ -23,7 +23,7 @@ class ActionImpl:
             
             s = State(s)
             s.validate()
-        except:
+        except AssertionError as e:
             s = MutableState(state)
             
             s.time_left -= self.t_min
@@ -68,6 +68,10 @@ def market_transaction(state, type_id, amount, order_type, orders):
         (orders.is_buy_order == (order_type == 'sell'))
     ].sort_values('price', ascending = order_type == 'buy').reset_index()
     
+    #if order_type == 'buy' and state.system == 30000142:
+    #    print('Found {} sell orders for {} in Jita'.format(len(candidate_orders), type_id))
+    #    print('  Trying to buy {}'.format(amount))
+    
     # Check that we only sell as many items as we have
     if order_type == 'sell':
         amount = min(amount, state.cargo[type_id][0])    
@@ -98,7 +102,7 @@ def market_transaction(state, type_id, amount, order_type, orders):
     
             vol_left, coll_left = State(state).limits_left()
             can_store = int(min(
-                vol_left / types[type_id]["volume"],
+                vol_left / state.universe.types[type_id]["volume"],
                 coll_left / order.price
             ))
             
@@ -128,24 +132,24 @@ def market_transaction(state, type_id, amount, order_type, orders):
         
         total_transfer += transfer
     
-    #if total_transfer > 0:
-    #    print('Transferred {} of {}'.format(total_transfer, types[type_id]["name"]))
+    if total_transfer > 0:
+        print('Transferred {} of {}'.format(total_transfer, type_id))
     
     # Remove empty cargo categories
     if state.cargo[type_id][0] == 0:
         del state.cargo[type_id]
     
-def buy(type_id, amount, orders):
-    @action(desc = 'Buy {} of {}'.format(amount, type_id), t_min = 0.5)
+def buy(type, amount, orders):
+    @action(desc = 'Buy {} of {} ({}, {} m3)'.format(amount, type["name"], type['type_id'], type['volume']), t_min = 0.5)
     def do_buy(s):
-        market_transaction(s, type_id, amount, 'buy', orders)
+        market_transaction(s, type['type_id'], amount, 'buy', orders)
         
     return do_buy
 
-def sell(type_id, amount, orders):
-    @action(desc = 'Sell {} of {}'.format(amount, type_id), t_min = 0.5)
+def sell(type, amount, orders):
+    @action(desc = 'Sell {} of {}'.format(amount, type["name"]), t_min = 0.5)
     def do_sell(s):
-        market_transaction(s, type_id, amount, 'sell', orders)
+        market_transaction(s, type['type_id'], amount, 'sell', orders)
     
     return do_sell
 # --- Movement actions ---

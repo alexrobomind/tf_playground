@@ -107,13 +107,13 @@ class TradingGym:
             ),
             'bs_amount' : lambda action, bs_item: tfp.distributions.TruncatedNormal(
                 loc = tf.abs(bs_params(action)[..., bs_item, 1]),
-                scale = tf.abs(bs_params(action)[...,bs_item, 2]),
+                scale = tf.abs(bs_params(action)[...,bs_item, 2]) + 0.01,
                 low =  0,
                 high = 1e8
             )
         })
         
-        sample = distribution.sample()
+        sample = distribution.sample()        
         logp = distribution.log_prob(sample)
         
         return sample, logp
@@ -124,7 +124,8 @@ class TradingGym:
         
         action = buy if sample['action'].numpy() == 1 else sell
         
-        return action(self.universe.type_list[sample['bs_item'].numpy()], sample['bs_amount'], self.orders)            
+        type_id = self.universe.type_list[sample['bs_item'].numpy()]
+        return action(self.universe.types[type_id], sample['bs_amount'], self.orders)            
     
     def encode_state(self, state, encode_orders):
         input = {}
@@ -220,7 +221,7 @@ class TradingGym:
 
             result = []
             
-            with tqdm(range(n_max), postfix = state.time_left) as steps:
+            with tqdm(range(n_max), postfix = state.time_left, leave = False) as steps:
                 for i in steps:
                     steps.set_postfix({'Time left' : state.time_left})
                     model_input = self.encode_state(state, encode_orders = False)
