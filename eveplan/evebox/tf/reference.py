@@ -14,23 +14,20 @@ class ReferenceModel(tf.keras.Model):
         self.state_shape = state_shape
         
         self.delta = tf.Variable(0, dtype = tf.float32)
+    
+    def _check_input(self, input, expect_orders):
+        # Check that all required tensors are present
+        assert 'state' in input
+        assert 'cargo' in input
+        assert 'systems' in input
         
-    def call(self, input):
-        print('Reference model called')
-        print(input)
-        # --- Input shape check ---
+        if expect_orders:
+            assert 'orders' in input
         
-        input, prev_state = input
+        # Determine batch shape
+        batch_shape = tf.shape(input["state"])[:-1]
         
-        # RNN state shape check
-        batch_shape = tf.shape(prev_state)[:-tf.size(self.state_shape)]
-        tf.debugging.Assert(
-            tf.reduce_all(
-                tf.shape(prev_state) == tf.concat([batch_shape, self.state_shape], axis = 0)
-            ),
-            ['Invalid state shape', tf.shape(prev_state), batch_shape, self.state_shape]
-        )
-        
+        # Check input shapes
         def assert_data_format(x, data_shape, dtype = tf.float32):
             assert x.dtype == dtype, 'Type mismatch, expected {}, got {}'.format(dtype, x.dtype)
             
@@ -58,17 +55,37 @@ class ReferenceModel(tf.keras.Model):
         systems = input["systems"]
         assert_data_format(systems, [self.n_systems, -1])
         
-        # A triplet of tensors describing the order data
-        (orders_types, orders_systems, orders_data) = input["orders"]
+        if 'orders' in input:
+            # A triplet of tensors describing the order data
+            (orders_types, orders_systems, orders_data) = input["orders"]
+
+            # A tensor of shape batch_shape + [len(orders), ?] holding scalar numeric data about the order
+            assert_data_format(orders_data, [self.n_orders, -1])
+
+            # An int32 tensor of shape batch_shape + [len(orders)] holding indices into the second-last dimension of 'types' for type data selection
+            assert_data_format(orders_types, [self.n_orders], dtype = tf.int32)
+
+            # An int32 tensor of shape batch_shape + [len(orders)] holding indices into the second-last dimension of 'systems' for system data selection
+            assert_data_format(orders_systems, [self.n_orders], dtype = tf.int32)
         
-        # A tensor of shape batch_shape + [len(orders), ?] holding scalar numeric data about the order
-        assert_data_format(orders_data, [self.n_orders, -1])
+        return batch_shape
         
-        # An int32 tensor of shape batch_shape + [len(orders)] holding indices into the second-last dimension of 'types' for type data selection
-        assert_data_format(orders_types, [self.n_orders], dtype = tf.int32)
+    def call(self, input):
+        print('Reference model called')
+        print(input)
+        # --- Input shape check ---
         
-        # An int32 tensor of shape batch_shape + [len(orders)] holding indices into the second-last dimension of 'systems' for system data selection
-        assert_data_format(orders_systems, [self.n_orders], dtype = tf.int32)
+        input, prev_state = input
+        
+        batch_shape = self._check_input(input, expect_orders = False)
+        
+        # RNN state shape check
+        tf.debugging.Assert(
+            tf.reduce_all(
+                tf.shape(prev_state) == tf.concat([batch_shape, self.state_shape], axis = 0)
+            ),
+            ['Invalid state shape', tf.shape(prev_state), batch_shape, self.state_shape]
+        )
         
         # --- Output shape ---
         
@@ -103,7 +120,7 @@ class ReferenceModel(tf.keras.Model):
         
         return output
     
-    def get_initial_state(self, inputs):
-        batch_shape = tf.shape(inputs["cargo"])[:-2]
+    def get_initial_state(self, input):
+        batch_shape = self._check_input(input, expect_orders = True)
         
         return tf.zeros(tf.concat([batch_shape, self.state_shape], axis = 0), dtype = tf.float32)

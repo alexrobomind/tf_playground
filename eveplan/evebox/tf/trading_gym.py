@@ -126,7 +126,7 @@ class TradingGym:
         
         return action(self.universe.type_list[sample['bs_item'].numpy()], sample['bs_amount'], self.orders)            
     
-    def encode_state(self, state):
+    def encode_state(self, state, encode_orders):
         input = {}
         
         # Encode general information
@@ -150,16 +150,6 @@ class TradingGym:
         
         # Encode types
         cargo_dict = dict(state.cargo)
-        #input['cargo'] = tf.constant(
-        #    [
-        #        [
-        #            cargo_dict.get(type, (0, 0))[0],
-        #            cargo_dict.get(type, (0, 0))[1]
-        #        ]
-        #        for type in self.universe.types
-        #    ],
-        #    dtype = tf.float32
-        #)
         input['cargo'] = tf.scatter_nd(
             indices = tf.constant([[self.type_indices[t]] for t in cargo_dict], shape = [len(cargo_dict), 1], dtype = tf.int32),
             updates = tf.constant([val for val in cargo_dict.values()], shape = [len(cargo_dict), 2], dtype = tf.float32),
@@ -167,15 +157,16 @@ class TradingGym:
         )
         del cargo_dict
         
-        updated_ids = np.asarray([k for k,v in state.updated_orders])
-        updated_orders = self.orders.loc[updated_ids].copy().sort_index()
-        
-        for id, vol in state.updated_orders:
-            updated_orders.loc[id]['volume_remain'] = vol
-        
-        input['orders'] = update_encoded_orders(
-            self.universe, self.orders, updated_orders
-        )(self.encoded_orders)
+        if encode_orders:
+            updated_ids = np.asarray([k for k,v in state.updated_orders])
+            updated_orders = self.orders.loc[updated_ids].copy().sort_index()
+
+            for id, vol in state.updated_orders:
+                updated_orders.loc[id]['volume_remain'] = vol
+
+            input['orders'] = update_encoded_orders(
+                self.universe, self.orders, updated_orders
+            )(self.encoded_orders)
         
         return input
         
@@ -218,14 +209,22 @@ class TradingGym:
             #return result
             return next_state, logp, value, sample
         
+        @tf.function
+        @recompute_grad_structured
+        def initial_value(input):
+            return model.get_initial_state(input)
+        
         def run(state, n_max):
-            model_input = self.encode_state(state)
-            model_state = model.get_initial_state(model_input)
+            model_input = self.encode_state(state, encode_orders = True)
+            model_state = initial_value(model_input)
 
             result = []
             
             with tqdm(range(n_max), postfix = state.time_left) as steps:
                 for i in steps:
+                    steps.set_postfix({'Time left' : state.time_left})
+                    model_input = self.encode_state(state, encode_orders = False)
+                    
                     # Handle the bulk of the model in graph mode
                     model_state, logp, value, sample = unroll_step(model_state, model_input)
                     
@@ -240,10 +239,6 @@ class TradingGym:
                     
                     # Advance state and update progress bar info
                     state = action(state)
-                    steps.set_postfix({'Time left' : state.time_left})
-                    
-                    # Encode data for next iteration
-                    model_input = self.encode_state(state)
         
             return result
         

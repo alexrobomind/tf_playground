@@ -184,8 +184,6 @@ class Embedding(tf.keras.layers.Layer):
         )
     
     def call(self, input, mask = None):
-        (orders_types, orders_systems, orders_data) = input['orders']
-        
         output = {
             'state' : input['state'],
             
@@ -208,14 +206,17 @@ class Embedding(tf.keras.layers.Layer):
             )
         }
         
-        output['orders'] = tf.concat(
-            [
-                tf.gather(output['cargo'], orders_types),
-                tf.gather(output['systems'], orders_systems),
-                orders_data
-            ]
-            , axis = -1
-        )
+        if 'orders' in input:
+            (orders_types, orders_systems, orders_data) = input['orders']
+            
+            output['orders'] = tf.concat(
+                [
+                    tf.gather(output['cargo'], orders_types),
+                    tf.gather(output['systems'], orders_systems),
+                    orders_data
+                ]
+                , axis = -1
+            )
         
         return output
     
