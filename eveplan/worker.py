@@ -278,7 +278,7 @@ def opt_fun(trial):
 
                 if trial.should_prune():
                     raise tuna.exceptions.TrialPruned()
-    except [KeyboardInterrupt, tuna.exceptions.TrialPruned] as e:
+    except (KeyboardInterrupt, tuna.exceptions.TrialPruned) as e:
         raise e
     except Exception as e:
         tqdm.write('')
