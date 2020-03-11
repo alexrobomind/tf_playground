@@ -132,9 +132,6 @@ def market_transaction(state, type_id, amount, order_type, orders):
         
         total_transfer += transfer
     
-    if total_transfer > 0:
-        print('Transferred {} of {}'.format(total_transfer, type_id))
-    
     # Remove empty cargo categories
     if state.cargo[type_id][0] == 0:
         del state.cargo[type_id]

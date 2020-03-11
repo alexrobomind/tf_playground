@@ -264,18 +264,33 @@ def opt_fun(trial):
 
     opt = tf.keras.optimizers.SGD(1.0)
 
-    for minute in trange(0, maxtime, desc = 'Training time', leave = False):
-        t1 = time()
-        while(time() < t1 + 60):
-            opt.minimize(loss, model.trainable_variables)
+    try:
+        with trange(0, maxtime, desc = 'Training time', leave = False) as minutes:
+            for minute in minutes:
+                t1 = time()
+                while(time() < t1 + 60):
+                    opt.minimize(loss, model.trainable_variables)
 
-            tf.debugging.assert_all_finite(loss_sideline, 'Non-finite loss encountered')
+                    tf.debugging.assert_all_finite(loss_sideline, 'Non-finite loss encountered')
 
-        # Report every minute for pruning
-        trial.report(performance(n = 5), minute)
+                # Report every minute for pruning
+                trial.report(performance(n = 5), minute)
 
-        if trial.should_prune():
-            raise tuna.exceptions.TrialPruned()
+                if trial.should_prune():
+                    raise tuna.exceptions.TrialPruned()
+    except [KeyboardInterrupt, tuna.exceptions.TrialPruned] as e:
+        raise e
+    except Exception as e:
+        tqdm.write('')
+        tqdm.write('Exception in trial: {}'.format(e))
+        tqdm.write('Cancelling trial')
+        tqdm.write('')
+        
+        trial.set_user_attr('cancelled_because', str(e))
+        
+        return -1e9
+    finally:
+        minutes.close()
 
     return performance()
 
@@ -284,9 +299,7 @@ study = tuna.load_study(
     study_name = 'tuning',
     storage = 'sqlite:///storage.sqlite',
     pruner = tuna.pruners.HyperbandPruner(),
-    sampler = tuna.samplers.TPESampler(
-        gamma = lambda x: int(min(0.15 * x))
-    )
+    sampler = tuna.samplers.TPESampler()
 )
 
 study.optimize(opt_fun, catch = (Exception,))
