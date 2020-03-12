@@ -173,7 +173,7 @@ State:
     
     @property
     def value(self):
-        return self.wallet + 1.001 * sum([value for t, (count, value) in self.cargo])
+        return self.wallet + sum([value for t, (count, value) in self.cargo])
         
 
 # Helper class for incremental state modification

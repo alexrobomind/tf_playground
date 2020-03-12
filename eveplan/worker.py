@@ -199,13 +199,15 @@ assert len(sys.argv) > 1, 'Please specify max. training time'
 maxtime = int(sys.argv[1]) if len(sys.argv) > 1 else 10
 
 def opt_fun(trial):   
-    policy_weight  = trial.suggest_loguniform('policy_weight', 1e-9, 1e-2)
-    entropy_weight = trial.suggest_loguniform('entropy_weight', 1e-9, 1e-2)
-    value_weight   = trial.suggest_loguniform('value_weight', 1e-9, 1e-2)
+    policy_weight  = trial.suggest_loguniform('policy_weight', 1e-12, 1e-4)
+    entropy_weight = trial.suggest_loguniform('entropy_weight', 1e-12, 1e-2)
+    value_weight   = trial.suggest_loguniform('value_weight', 1e-12, 1e-2)
+    learn_speed    = trial.suggest_loguniform('learn_speed', 1e-3, 1)
     
     tqdm.write('Policy weight:  {:.2e}'.format(policy_weight))
     tqdm.write('Entropy weight: {:.2e}'.format(entropy_weight))
     tqdm.write('Value weight:   {:.2e}'.format(value_weight))
+    tqdm.write('Learning speed: {:.2e}'.format(learn_speed))
     
     def make_layer_info(name, nmin, nmax):
         n = trial.suggest_int('n_layers_{}'.format(name), nmin, nmax)
@@ -236,7 +238,10 @@ def opt_fun(trial):
     loss_sideline = tf.Variable(0, dtype = tf.float32)
     
     def loss():
-        result = unroller(state, 100)
+        p_teacher = 1 - minute * learn_speed
+        p_teacher = min(1, max(0, p_teacher))
+        
+        result = unroller(state, 100, p_teacher = p_teacher)
 
         policy_loss, value_loss, entropy_loss = gym.losses(result)
 
@@ -259,13 +264,18 @@ def opt_fun(trial):
             result = unroller(state, 100)
             return result[-1][0].value - state.value
 
-        return sum([single_run() for i in range(n)]) / n
-        #return sum([loss() for i in range(n)]) / n
+        perf = sum([single_run() for i in range(n)]) / n
+        
+        tqdm.write('')
+        tqdm.write('Performance: {}'.format(perf))
+        tqdm.write('')
+        
+        return perf
 
     opt = tf.keras.optimizers.SGD(1.0)
 
     try:
-        with trange(0, maxtime, desc = 'Training time', leave = False) as minutes:
+        with trange(0, maxtime, desc = 'Training', leave = False) as minutes:
             for minute in minutes:
                 t1 = time()
                 while(time() < t1 + 60):
@@ -274,7 +284,9 @@ def opt_fun(trial):
                     tf.debugging.assert_all_finite(loss_sideline, 'Non-finite loss encountered')
 
                 # Report every minute for pruning
-                trial.report(performance(n = 5), minute)
+                perf = performance(n = 5)
+                trial.report(perf, minute)
+                minutes.set_postfix({'perf' : perf})
 
                 if trial.should_prune():
                     raise tuna.exceptions.TrialPruned()
@@ -286,7 +298,7 @@ def opt_fun(trial):
         tqdm.write('Cancelling trial')
         tqdm.write('')
         
-        trial.set_user_attr('cancelled_because', str(e))
+        trial.set_user_attr('cancelled_because', repr(e))
         
         return -1e9
     finally:

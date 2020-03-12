@@ -1,12 +1,14 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
+import random
 
 import functools
 
 from evebox.actions import buy, sell, warp_to_system
 from evebox.tf.embedding import encode_orders, update_encoded_orders
 from evebox.state import MutableState, State
+from evebox.teacher import propose_action
 
 Joint = tfp.distributions.JointDistributionCoroutine
 
@@ -172,29 +174,6 @@ class TradingGym:
         return input
         
     def unroll_model(self, model, tqdm):
-        # Since the recompute grad decorator does not handle structured data
-        #  (e.g. dicts), we need to flatten data along its boundary. For the
-        #  graph-mode decoding, we need to have the structure of these data
-        #  ready. Therefore we use an example state to infer the structure
-        #  of the model input.
-        
-        # Creation of example state
-        #example_state = MutableState()
-        #example_state.time_left = 1.0
-        #example_state.system = self.universe.system_list[0]
-        
-        #example_state = State(example_state)
-        
-        # Encoding of example state
-        #example_input = self.encode_state(example_state)
-        #example_model_state = model.get_initial_state(example_input)
-        #example_output, _ = model(
-        #    (
-        #        example_input,
-        #        model.get_initial_state(example_input)
-        #    )
-        #)
-        #example_sample, _ = self.sample_and_logp(example_output)
         
         @tf.function
         @recompute_grad_structured
@@ -215,7 +194,7 @@ class TradingGym:
         def initial_value(input):
             return model.get_initial_state(input)
         
-        def run(state, n_max):
+        def run(state, n_max, p_teacher = 0):
             model_input = self.encode_state(state, encode_orders = True)
             model_state = initial_value(model_input)
 
@@ -230,6 +209,11 @@ class TradingGym:
                     model_state, logp, value, sample = unroll_step(model_state, model_input)
                     
                     action = self.action(sample)
+                    
+                    # Optionally let the teacher take over
+                    if random.random() < p_teacher:
+                        action = propose_action(state, self.orders)
+                        logp = tf.constant(0, dtype = tf.float32)
                     
                     # Record this sequence
                     result.append((state, action, logp, value))
