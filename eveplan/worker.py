@@ -242,20 +242,28 @@ def opt_fun(trial):
         p_teacher = min(1, max(0, p_teacher))
         
         result = unroller(state, 100, p_teacher = p_teacher)
+        
+        reward = result[-1][0].value - state.value
 
         policy_loss, value_loss, entropy_loss = gym.losses(result)
-
         total_loss = value_weight * value_loss + policy_weight * policy_loss + entropy_weight * entropy_loss
         
         tqdm.write('Action 1: {}'.format(result[0][1]))
         
         loss_sideline.assign(total_loss)
+        
+        tf.summary.scalar('Policy loss', policy_loss, step)
+        tf.summary.scalar('Value loss', value_loss, step)
+        tf.summary.scalar('Entropy loss', entropy_loss, step)
+        tf.summary.scalar('Total loss', total_loss, step)
+        tf.summary.scalar('Teacher probability', p_teacher, step)
+        tf.summary.scalar('Reward', reward, step)
 
         tqdm.write('Policy loss:  {}'.format(policy_loss))
         tqdm.write('Value loss:   {}'.format(value_loss))
         tqdm.write('Entropy loss: {}'.format(entropy_loss))
         tqdm.write('Total loss:   {}'.format(total_loss))
-        tqdm.write('Gain:         {}'.format(result[-1][0].value - result[0][0].value))
+        tqdm.write('Reward:       {}'.format(reward)
         
         return total_loss
     
@@ -274,35 +282,49 @@ def opt_fun(trial):
 
     opt = tf.keras.optimizers.SGD(1.0)
 
-    try:
-        with trange(0, maxtime, desc = 'Training', leave = False) as minutes:
-            for minute in minutes:
-                t1 = time()
-                while(time() < t1 + 60):
-                    opt.minimize(loss, model.trainable_variables)
+    writer = tf.summary.create_file_writer('logs/{}'.format(trial.number))
+    step = 0
+    
+    with writer.as_default():
+        try:
+            with trange(0, maxtime, desc = 'Training', leave = False) as minutes:for minute in minutes:
+                    t1 = time()
+                    while(time() < t1 + 60):
+                        opt.minimize(loss, model.trainable_variables)
 
-                    tf.debugging.assert_all_finite(loss_sideline, 'Non-finite loss encountered')
+                        tf.debugging.assert_all_finite(loss_sideline, 'Non-finite loss encountered')
+                        
+                        step += 1
 
-                # Report every minute for pruning
-                perf = performance(n = 5)
-                trial.report(perf, minute)
-                minutes.set_postfix({'perf' : perf})
+                    # Report every minute for pruning
+                    perf = performance(n = 5)
+                    trial.report(perf, minute)
+                    minutes.set_postfix({'perf' : perf})
+                    
+                    tf.summary.scalar('Performance', perf, step)
+                    
+                    # Report statistics about model weights
+                    #for var in model.trainable_variables:
+                    #    tf.summary.histogram(var.name, var, step)
 
-                if trial.should_prune():
-                    raise tuna.exceptions.TrialPruned()
-    except (KeyboardInterrupt, tuna.exceptions.TrialPruned) as e:
-        raise e
-    except Exception as e:
-        tqdm.write('')
-        tqdm.write('Exception in trial: {}'.format(e))
-        tqdm.write('Cancelling trial')
-        tqdm.write('')
-        
-        trial.set_user_attr('cancelled_because', repr(e))
-        
-        return -1e9
-    finally:
-        minutes.close()
+                    if trial.should_prune():
+                        raise tuna.exceptions.TrialPruned()
+                
+                model.save('models/{}/model')
+                
+        except (KeyboardInterrupt, tuna.exceptions.TrialPruned) as e:
+            raise e
+        except Exception as e:
+            tqdm.write('')
+            tqdm.write('Exception in trial: {}'.format(e))
+            tqdm.write('Cancelling trial')
+            tqdm.write('')
+
+            trial.set_user_attr('cancelled_because', repr(e))
+
+            return -1e9
+        finally:
+            minutes.close()
 
     return performance()
 
