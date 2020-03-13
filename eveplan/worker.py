@@ -263,7 +263,7 @@ def opt_fun(trial):
         tqdm.write('Value loss:   {}'.format(value_loss))
         tqdm.write('Entropy loss: {}'.format(entropy_loss))
         tqdm.write('Total loss:   {}'.format(total_loss))
-        tqdm.write('Reward:       {}'.format(reward)
+        tqdm.write('Reward:       {}'.format(reward))
         
         return total_loss
     
@@ -287,7 +287,8 @@ def opt_fun(trial):
     
     with writer.as_default():
         try:
-            with trange(0, maxtime, desc = 'Training', leave = False) as minutes:for minute in minutes:
+            with trange(0, maxtime, desc = 'Training', leave = False) as minutes:
+                for minute in minutes:
                     t1 = time()
                     while(time() < t1 + 60):
                         opt.minimize(loss, model.trainable_variables)
